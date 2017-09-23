@@ -1,0 +1,39 @@
+# This file contains metadata for your plugin. Since 
+# version 2.0 of QGIS this is the proper way to supply 
+# information about a plugin. The old method of 
+# embedding metadata in __init__.py will 
+# is no longer supported since version 2.0.
+
+# This file should be included when you package your plugin.# Mandatory items:
+
+[general]
+name=Mdb Loader
+qgisMinimumVersion=2.16
+description=This plugin loads a MS Access table for use in QGIS
+version=0.2
+author=P. van de Geer
+email=pvandegeer@gmail.com
+
+about=This plugin loads a Microsoft Access table for use iun QGIS. The underlying "pseudo mdb provider" simulates a data provider using a memory layer. This concept is copied from the Pseudo CSV Provider which can be found here: http://github.com/g-sherman/pseudo_csv_provider The concept is the same, the actual implementation is different. Like the original, the provider will: * Create a memory layer from a table in a MDB file * Create fields in the layer based on the different datatype found in the table * Write changes back to the database table using the primary keys (experimental) * Does not support geometries, but can easily linked to another layer A few things about this implementation: * It is an example, not a robust implementation * It lacks proper error handling * It could be extended to support geometry types
+
+tracker=github.com/dummy
+repository=github.com/dummy
+# End of mandatory metadata
+
+# Recommended items:
+
+# Uncomment the following line and add your changelog:
+# changelog=
+
+# Tags are comma separated with spaces allowed
+tags=database, table ms access, mdb accdb
+
+homepage=github.com/dummy
+category=Database
+icon=mdb_database.png
+# experimental flag
+experimental=True
+
+# deprecated flag (applies to the whole plugin, not just a single version)
+deprecated=False
+

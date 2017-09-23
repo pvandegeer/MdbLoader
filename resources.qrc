@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/plugins/MdbLoader" >
+        <file>mdb_database.png</file>
+    </qresource>
+</RCC>
