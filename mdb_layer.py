@@ -34,9 +34,7 @@ class MdbLayer:
         self.cur = conn.cursor()
 
         # determine primary key(s)
-        # fixme: make read only or fail if no pks available
-        # todo: use primaryKeys(table, catalog=None, schema=None) ??
-        self.pk_cols = [row[8] for row in self.cur.statistics(self.mdb_table) if row[5]=='PrimaryKey']
+        self.pk_cols = [row[8] for row in self.cur.statistics(self.mdb_table) if row[5] == 'PrimaryKey']
 
         # get record count
         self.record_count = self.cur.execute("SELECT COUNT(*) FROM " + self.mdb_table).fetchone()[0]
@@ -73,7 +71,8 @@ class MdbLayer:
         self.add_records()
 
         # set read only or make connections/triggers
-        if READ_ONLY:
+        # if there are no primary keys there is no way to edit
+        if READ_ONLY or not self.pk_cols:
             self.lyr.setReadOnly()
         else:
             self.lyr.beforeCommitChanges.connect(self.before_commit)
