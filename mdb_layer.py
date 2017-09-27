@@ -19,7 +19,21 @@ class MdbLayer:
     doing_attr_update = False
 
     def __init__(self, mdb_path, mdb_table, mdb_columns='*', mdb_hide_columns = ''):
-        """ Initialize the layer by reading a Access mdb file, creating a memory layer, and adding records to it """
+        """ Initialize the layer by reading a Access mdb file, creating a memory layer, and adding records to it
+
+        :param mdb_path: Path to the database you wish to access.
+        :type mdb_path: str
+
+        :param mdb_table: Table name of the table to open.
+        :type mdb_table: str
+
+        :param mdb_columns: Comma separated list of columns to use for this layer. Defaults to all (*).
+        :type mdb_columns: str
+
+        :param mdb_hide_columns: Comma separated list of columns to hide for this layer.
+            Use in combination with mdb_columns='*'
+        :type mdb_hide_columns: str
+        """
 
         self.mdb_path = mdb_path
         self.mdb_table = mdb_table
@@ -29,6 +43,7 @@ class MdbLayer:
         self.old_pk_values = {}
 
         # connect to the database
+        # fixme: fail if path does not exist or pyodbc cannot connect
         constr = "DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};FIL={MS Access};DBQ=" + self.mdb_path
         conn = pyodbc.connect(constr)
         self.cur = conn.cursor()
@@ -37,13 +52,12 @@ class MdbLayer:
         self.pk_cols = [row[8] for row in self.cur.statistics(self.mdb_table) if row[5] == 'PrimaryKey']
 
         # get record count
-        self.record_count = self.cur.execute("SELECT COUNT(*) FROM " + self.mdb_table).fetchone()[0]
+        self.cur.execute("SELECT COUNT(*) FROM {}".format(self.mdb_table))
+        self.record_count = self.cur.fetchone()[0]
 
         # get records from the table
-        # fixme: use parameters
-        sql = "SELECT " + self.mdb_columns + " FROM " + self.mdb_table
+        sql = "SELECT {} FROM {}".format(self.mdb_columns, self.mdb_table)
         self.cur.execute(sql)
-        # logger("sql:  " + sql)
 
         # create a dictionary with fieldname:type
         # fixme: QgsField: Field variant type, currently supported: String / Int / Double
@@ -124,6 +138,7 @@ class MdbLayer:
             where_clause, params = self.get_where_clause(feature, params)
 
             # assemble SQL query
+            # fixme: use parameters and string format
             sql = "UPDATE " + self.mdb_table
             sql += " SET " + ", ".join(fields)
             sql += where_clause
@@ -143,7 +158,7 @@ class MdbLayer:
             where_clause, params = self.get_where_clause(feature)
 
             # assemble SQL query
-            sql = "DELETE * FROM " + self.mdb_table
+            sql = "DELETE * FROM {}".format(self.mdb_table)
             sql += where_clause
 
             logger(sql + " : " + str(params))
