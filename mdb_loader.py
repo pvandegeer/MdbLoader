@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 /***************************************************************************
- MdbLoader
+ mdb_loader
                                  A QGIS plugin
  This plugin loads a MS Access table for use in QGIS
                               -------------------
@@ -165,7 +165,7 @@ class MdbLoader:
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
 
-        icon_path = ':/plugins/MdbLoader/mdb_database.png'
+        icon_path = ':/plugins/mdb_loader/mdb_database.png'
         self.add_action(
             icon_path,
             text=self.tr(u'Open MS Access Table'),

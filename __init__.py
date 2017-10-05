@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 /***************************************************************************
- MdbLoader
+ mdb_loader
                                  A QGIS plugin
  This plugin loads a MS Access table for use in QGIS
                              -------------------
@@ -25,7 +25,7 @@
 
 # noinspection PyPep8Naming
 def classFactory(iface):  # pylint: disable=invalid-name
-    """Load MdbLoader class from file MdbLoader.
+    """Load MdbLoader class from file mdb_loader.
 
     :param iface: A QGIS interface instance.
     :type iface: QgsInterface
