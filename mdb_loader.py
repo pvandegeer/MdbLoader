@@ -23,8 +23,8 @@
 from contextlib import contextmanager
 from mdb_layer import MdbLayer
 from PyQt4.QtCore import Qt, QSettings, QTranslator, qVersion, QCoreApplication
-from PyQt4.QtGui import QApplication, QCursor, QAction, QIcon, QFileDialog, QListWidgetItem
-from qgis.core import QgsMessageLog
+from PyQt4.QtGui import QApplication, QCursor, QAction, QIcon, QFileDialog
+from qgis.core import QgsMessageLog, QgsProject
 
 # Initialize Qt resources from file resources.py
 import resources, pyodbc
@@ -186,53 +186,64 @@ class MdbLoader:
 
     def run(self):
         """Run method that performs all the real work"""
-        # default_folder = os.environ['HOME']
-        # fixme: remember base path / remove own default
-        default_folder = r'D:\Google Drive\Dev\QGisArcholMenu'
         mdb_file = QFileDialog.getOpenFileName(None, "Select database file",
-                default_folder, 'Ms Access Database (*.mdb *.accdb)')
+                get_default_path(), 'Ms Access Database (*.mdb *.accdb)')
+        if not mdb_file: return
 
-        if mdb_file:
-            # check if file exists
-            if not os.path.isfile(mdb_file):
-                self.iface.messageBar().pushError("MDB Loader", "File not found")
-                return
+        # store path; check if file exists
+        set_default_path(mdb_file)
+        if not os.path.isfile(mdb_file):
+            self.iface.messageBar().pushError("MDB Loader", "File not found")
+            return
 
-             # connect to the database, get tables
-            constr = "DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};FIL={MS Access};DBQ=" + mdb_file
-            conn = pyodbc.connect(constr)
-            cur = conn.cursor()
+         # connect to the database, get tables
+        constr = "DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};FIL={MS Access};DBQ=" + mdb_file
+        conn = pyodbc.connect(constr)
+        cur = conn.cursor()
 
-            with self.wait_cursor():
-                self.dlg.listWidget.clear()
-                for row in cur.tables():
-                    # todo: allow (readonly) queries?
-                    if row.table_type == 'TABLE':
-                        #logger(row.table_name)
-                        self.dlg.listWidget.addItem(row.table_name)
+        with wait_cursor():
+            self.dlg.listWidget.clear()
+            for row in cur.tables():
+                # todo: allow (readonly) queries?
+                if row.table_type == 'TABLE':
+                    #logger(row.table_name)
+                    self.dlg.listWidget.addItem(row.table_name)
 
-                conn.close()
+            conn.close()
 
-            # return to QGis if there are no tables
-            if self.dlg.listWidget.count() < 1:
-                self.iface.messageBar().pushWarning("MDB Loader", "No tables were found")
-                return
+        # return to QGis if there are no tables
+        if self.dlg.listWidget.count() < 1:
+            self.iface.messageBar().pushWarning("MDB Loader", "No tables were found")
+            return
 
-            # show the dialog
-            self.dlg.listWidget.item(0).setSelected(True)
-            self.dlg.show()
+        # show the dialog
+        self.dlg.listWidget.item(0).setSelected(True)
+        self.dlg.show()
 
-            # run the dialog event loop / see if OK was pressed
-            result = self.dlg.exec_()
-            if result:
-                selected_table = self.dlg.listWidget.selectedItems()[0].text()
-                # logger(selected_table)
-                self.mdblayer = MdbLayer(mdb_file, selected_table, mdb_hide_columns = 's_GUID, MAPINFO_ID')
+        # run the dialog event loop / see if OK was pressed
+        result = self.dlg.exec_()
+        if result:
+            selected_table = self.dlg.listWidget.selectedItems()[0].text()
+            self.mdblayer = MdbLayer(mdb_file, selected_table, mdb_hide_columns = 's_GUID, MAPINFO_ID')
 
-    @contextmanager
-    def wait_cursor(self):
-        try:
-            QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
-            yield
-        finally:
-            QApplication.restoreOverrideCursor()
+
+def set_default_path(path):
+    """Set the default path"""
+    path = os.path.dirname(path)
+    QSettings().setValue("mdb_loader/default_path", path)
+    QgsProject.instance().writeEntry("mdb_loader", "default_path", path)
+    return
+
+def get_default_path():
+    """Choose a sane default path"""
+    path = QSettings().value("mdb_loader/default_path", os.environ['HOME'])
+    path = QgsProject.instance().readEntry("mdb_loader", "default_path", path)[0]
+    return path
+
+@contextmanager
+def wait_cursor():
+    try:
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        yield
+    finally:
+        QApplication.restoreOverrideCursor()
