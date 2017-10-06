@@ -196,36 +196,41 @@ class MdbLoader:
             self.iface.messageBar().pushError("MDB Loader", "File not found")
             return
 
-         # connect to the database, get tables
+         # connect to the database, get tables and queries
         constr = "DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};FIL={MS Access};DBQ=" + mdb_file
         conn = pyodbc.connect(constr)
         cur = conn.cursor()
 
         with wait_cursor():
-            self.dlg.listWidget.clear()
-            for row in cur.tables():
-                # todo: allow (readonly) queries?
-                if row.table_type == 'TABLE':
-                    #logger(row.table_name)
-                    self.dlg.listWidget.addItem(row.table_name)
-
-            conn.close()
-
-        # return to QGis if there are no tables
-        if self.dlg.listWidget.count() < 1:
-            self.iface.messageBar().pushWarning("MDB Loader", "No tables were found")
-            return
+            tables = cur.tables(tableType="TABLE, VIEW").fetchall()
+            if not tables:
+                self.iface.messageBar().pushWarning("MDB Loader", "No tables or queries were found")
+                conn.close()
+                return
+            else:
+                self.dlg.tableListWidget.clear()
+                self.dlg.queryListWidget.clear()
+                for row in tables:
+                    if row.table_type == 'TABLE':
+                        self.dlg.tableListWidget.addItem(row.table_name)
+                    else:
+                        self.dlg.queryListWidget.addItem(row.table_name)
+                conn.close()
 
         # show the dialog
-        self.dlg.listWidget.item(0).setSelected(True)
+        self.dlg.tableListWidget.item(0).setSelected(True)
+        self.dlg.queryListWidget.item(0).setSelected(True)
         self.dlg.show()
 
         # run the dialog event loop / see if OK was pressed
         result = self.dlg.exec_()
         if result:
-            selected_table = self.dlg.listWidget.selectedItems()[0].text()
-            self.mdblayer = MdbLayer(mdb_file, selected_table, mdb_hide_columns = 's_GUID, MAPINFO_ID')
+            if self.dlg.tabWidget.currentIndex() == 0:
+                selected_table = self.dlg.tableListWidget.selectedItems()[0].text()
+            else:
+                selected_table = self.dlg.queryListWidget.selectedItems()[0].text()
 
+            self.mdblayer = MdbLayer(mdb_file, selected_table)
 
 def set_default_path(path):
     """Set the default path"""

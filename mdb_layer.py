@@ -48,8 +48,15 @@ class MdbLayer:
         conn = pyodbc.connect(constr)
         self.cur = conn.cursor()
 
-        # determine primary key(s)
-        self.pk_cols = [row[8] for row in self.cur.statistics(self.mdb_table) if row[5] == 'PrimaryKey']
+        # determine primary key(s) if table
+        table = self.cur.tables(table=self.mdb_table).fetchone()
+        if table.table_type == 'TABLE':
+            self.pk_cols = [row[8] for row in self.cur.statistics(self.mdb_table) if row[5] == 'PrimaryKey']
+        elif table.table_type == 'VIEW':
+            self.pk_cols = []
+        else:
+            self.iface.messageBar().pushWarning(
+                "MDB Loader", "Database object type '{}' not supported".format(table.table_type))
 
         # get record count
         self.cur.execute("SELECT COUNT(*) FROM {}".format(self.mdb_table))
