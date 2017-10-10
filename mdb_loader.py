@@ -34,6 +34,7 @@ import os.path
 
 logger = lambda msg: QgsMessageLog.logMessage(msg, 'Mdb Loader', 1)
 
+
 class MdbLoader:
     """QGIS Plugin Implementation."""
 
@@ -63,11 +64,9 @@ class MdbLoader:
             if qVersion() > '4.3.3':
                 QCoreApplication.installTranslator(self.translator)
 
-
         # Declare instance attributes
         self.actions = []
         self.menu = self.tr(u'&Mdb Loader')
-        # TODO: We are going to let the user set this up in a future iteration
         self.toolbar = self.iface.addToolBar(u'MdbLoader')
         self.toolbar.setObjectName(u'MdbLoader')
 
@@ -172,7 +171,6 @@ class MdbLoader:
             callback=self.run,
             parent=self.iface.mainWindow())
 
-
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
         for action in self.actions:
@@ -182,7 +180,6 @@ class MdbLoader:
             self.iface.removeToolBarIcon(action)
         # remove the toolbar
         del self.toolbar
-
 
     def run(self):
         """Run method that performs all the real work"""
@@ -196,10 +193,14 @@ class MdbLoader:
             self.iface.messageBar().pushError("MDB Loader", "File not found")
             return
 
-         # connect to the database, get tables and queries
+        # connect to the database, get tables and queries
         constr = "DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};FIL={MS Access};DBQ=" + mdb_file
-        conn = pyodbc.connect(constr)
-        cur = conn.cursor()
+        try:
+            conn = pyodbc.connect(constr, timeout=3)
+            cur = conn.cursor()
+        except Exception as e:
+            self.iface.messageBar().pushWarning("MDB Loader", "Couldn't connect. Error: {}".format(e))
+            return
 
         with wait_cursor():
             tables = cur.tables(tableType="TABLE, VIEW").fetchall()
@@ -232,6 +233,7 @@ class MdbLoader:
 
             self.mdblayer = MdbLayer(mdb_file, selected_table)
 
+
 def set_default_path(path):
     """Set the default path"""
     path = os.path.dirname(path)
@@ -239,11 +241,13 @@ def set_default_path(path):
     QgsProject.instance().writeEntry("mdb_loader", "default_path", path)
     return
 
+
 def get_default_path():
     """Choose a sane default path"""
     path = QSettings().value("mdb_loader/default_path", os.environ['HOME'])
     path = QgsProject.instance().readEntry("mdb_loader", "default_path", path)[0]
     return path
+
 
 @contextmanager
 def wait_cursor():

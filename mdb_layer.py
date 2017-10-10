@@ -6,7 +6,7 @@ from qgis.core import (QgsVectorLayer, QgsFeature, QgsGeometry, QgsPoint, QgsFie
                        QgsMapLayerRegistry, QgsFeatureRequest, QgsMessageLog)
 
 
-logger = lambda msg: QgsMessageLog.logMessage(msg, 'Mdb Provider Example', 1)
+logger = lambda msg: QgsMessageLog.logMessage(msg, 'Mdb Layer', 1)
 
 SHOW_PROGRESSBAR = True
 READ_ONLY = True
@@ -40,13 +40,18 @@ class MdbLayer:
         self.mdb_columns = mdb_columns
         self.mdb_hide_columns = [x.strip() for x in mdb_hide_columns.split(",")]
         self.record_count = 0
+        self.progress = object
         self.old_pk_values = {}
+        self.read_only = READ_ONLY
 
         # connect to the database
-        # fixme: fail if path does not exist or pyodbc cannot connect
         constr = "DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};FIL={MS Access};DBQ=" + self.mdb_path
-        conn = pyodbc.connect(constr)
-        self.cur = conn.cursor()
+        try:
+            conn = pyodbc.connect(constr, timeout=3)
+            self.cur = conn.cursor()
+        except Exception as e:
+            logger("Couldn't connect. Error: {}".format(e))
+            return
 
         # determine primary key(s) if table
         table = self.cur.tables(table=self.mdb_table).fetchone()
@@ -55,32 +60,37 @@ class MdbLayer:
         elif table.table_type == 'VIEW':
             self.pk_cols = []
         else:
-            self.iface.messageBar().pushWarning(
-                "MDB Loader", "Database object type '{}' not supported".format(table.table_type))
+            logger("Database object type '{}' not supported".format(table.table_type))
+            return
 
         # get record count
-        self.cur.execute("SELECT COUNT(*) FROM {}".format(self.mdb_table))
-        self.record_count = self.cur.fetchone()[0]
+        try:
+            self.cur.execute("SELECT COUNT(*) FROM {}".format(self.mdb_table))
+            self.record_count = self.cur.fetchone()[0]
+        except Exception as e:
+            self.iface.messageBar().pushWarning("MDB Layer",
+                "There's a problem with this table or query. Error: {}".format(e))
+            return
 
         # get records from the table
         sql = "SELECT {} FROM {}".format(self.mdb_columns, self.mdb_table)
         self.cur.execute(sql)
 
         # create a dictionary with fieldname:type
-        # fixme: QgsField: Field variant type, currently supported: String / Int / Double
+        # QgsField only supports: String / Int / Double
+        # falling back to string for: bytearray, bool, datetime.datetime, datetime.date, datetime.time, ?
         field_name_types = []
         field_type_map = {str: QVariant.String, unicode: QVariant.String,
-                          int: QVariant.Int, float: QVariant.Double,
-                          bytearray: QVariant.String,  bool: QVariant.String,
-                          datetime.datetime: QVariant.String, datetime.date: QVariant.String,
-                          datetime.time: QVariant.String}
+                          int: QVariant.Int, float: QVariant.Double}
 
         # create a list with a QgsFields for every db column
         for column in self.cur.description:
-            # fixme: check for unhandled type
-            # logger(str(column[0]) + ": " + str(column[1]))
             if column[0] not in self.mdb_hide_columns:
-                field_name_types.append(QgsField(column[0], field_type_map[column[1]]))
+                if column[1] in field_type_map:
+                    field_name_types.append(QgsField(column[0], field_type_map[column[1]]))
+                else:
+                    field_name_types.append(QgsField(column[0], QVariant.String))
+                    self.read_only = True        # no reliably editing for other data types
 
         # create the layer, add columns
         self.lyr = QgsVectorLayer("None", 'mdb_' + mdb_table, 'memory')
@@ -93,7 +103,7 @@ class MdbLayer:
 
         # set read only or make connections/triggers
         # if there are no primary keys there is no way to edit
-        if READ_ONLY or not self.pk_cols:
+        if self.read_only or not self.pk_cols:
             self.lyr.setReadOnly()
         else:
             self.lyr.beforeCommitChanges.connect(self.before_commit)
@@ -104,15 +114,9 @@ class MdbLayer:
     def add_records(self):
         """ Add records to the memory layer by stepping through the query result """
 
-        # set up a progressbar
-        if SHOW_PROGRESSBAR:
-            progress_message_bar = iface.messageBar().createMessage(
-                "Loading {} records from table {}...".format(self.record_count, self.lyr.name()))
-            progress = QProgressBar()
-            progress.setMaximum(self.record_count)
-            progress.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            progress_message_bar.layout().addWidget(progress)
-            iface.messageBar().pushWidget(progress_message_bar, iface.messageBar().INFO)
+        self.setup_progressbar("Loading {} records from table {}..."
+                               .format(self.record_count, self.lyr.name()),
+                               self.record_count)
 
         provider = self.lyr.dataProvider()
         for i, row in enumerate(self.cur):
@@ -120,7 +124,7 @@ class MdbLayer:
             feature.setGeometry(QgsGeometry())
             feature.setAttributes([flds for flds in row])
             provider.addFeatures([feature])
-            if SHOW_PROGRESSBAR: progress.setValue(i)
+            self.update_progressbar(i)
 
         iface.messageBar().clearWidgets()
         iface.messageBar().pushMessage("Ready", "{} records added to {}".format(str(self.record_count), self.lyr.name())
@@ -132,6 +136,7 @@ class MdbLayer:
         # fixme: implement rollback on db fail
 
         # Update attribute values
+        # ---------------------------------------------------------------------
         # changes: { fid: {pk1: value, pk2: value, etc}}
         changes = self.lyr.editBuffer().changedAttributeValues()
         field_names = [field.name() for field in self.lyr.pendingFields()]
@@ -142,12 +147,9 @@ class MdbLayer:
             fields = [field_names[att_id] + " = (?)" for att_id in attributes]
             params = tuple(attributes.values())
 
-            where_clause, params = self.get_where_clause(feature, params)
-
             # assemble SQL query
-            # fixme: use parameters and string format
-            sql = "UPDATE " + self.mdb_table
-            sql += " SET " + ", ".join(fields)
+            where_clause, params = self.get_where_clause(feature, params)
+            sql = "UPDATE {} SET {}".format(self.mdb_table, ", ".join(fields))
             sql += where_clause
 
             logger(sql + " : " + str(params))
@@ -158,6 +160,7 @@ class MdbLayer:
         logger("changed:  " + str(row_count))
 
         # Delete features: 'DELETE * FROM spoor WHERE pk = id
+        # ---------------------------------------------------------------------
         row_count = 0
         fids = self.lyr.editBuffer().deletedFeatureIds()
         for feature in self.lyr.dataProvider().getFeatures(QgsFeatureRequest().setFilterFids(fids)):
@@ -176,6 +179,7 @@ class MdbLayer:
         logger("deleted:  " + str(row_count))
 
         # Add features
+        # ---------------------------------------------------------------------
         # fixme: implement
 
     def get_where_clause(self, feature, params=()):
@@ -187,3 +191,17 @@ class MdbLayer:
 
         where_clause = " WHERE " + " AND ".join(where_clause)
         return where_clause, params
+
+    def setup_progressbar(self, message, maximum):
+        if not SHOW_PROGRESSBAR: return
+
+        progress_message_bar = iface.messageBar().createMessage(message)
+        self.progress = QProgressBar()
+        self.progress.setMaximum(maximum)
+        self.progress.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        progress_message_bar.layout().addWidget(self.progress)
+        iface.messageBar().pushWidget(progress_message_bar, iface.messageBar().INFO)
+
+    def update_progressbar(self, progress):
+        if SHOW_PROGRESSBAR:
+            self.progress.setValue(progress)

@@ -15,8 +15,3 @@ Like the original, the provider will:
 * create fields in the layer based on the different datatypes found in the table
 * write changes back to the database table using the primary keys (experimental, read-only by default)
 * not support geometries, but can easily be linked to another layer
-
-A few things about this implementation:
-* It is an example, not yet a robust implementation
-* It lacks proper error handling
-* It could be extended to support geometry types
